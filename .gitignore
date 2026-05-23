@@ -1,0 +1,32 @@
+# ─── macOS / editor noise ─────────────────────────────────────────────
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# ─── Office / R lock files and junk ───────────────────────────────────
+~$*
+.Rhistory
+.Rapp.history
+
+# ─── Tooling metadata ─────────────────────────────────────────────────
+.claude/
+.vscode/
+.idea/
+
+# ─── Private / academic artifacts (not for public repo) ──────────────
+# The design journal stays on disk until graded.
+Design journal.docx
+Design journal.pdf
+# The lecturer's assignment brief (their IP, not redistributable).
+MDDN333_A2_Visualisation_Agent_FINAL1.pdf
+# The pitch deck (private).
+Wellington-chan - Helena's pitch.pptx
+*.pptx
+
+# ─── Heavy build-time source data ─────────────────────────────────────
+# The runtime uses metlink_static.js (already small). The raw GTFS
+# dataset folder is ~112 MB and only needed by preprocess_metlink.py;
+# keep it on disk so the regenerator still works, but don't push it.
+metlink datasets/

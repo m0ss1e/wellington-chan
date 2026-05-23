@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/png" href="favicon.png" />
+<title>Wellington-chan (bug-test)</title>
+<style>
+  :root {
+    --bg: #ffdd04;
+    --ink: #111;
+    --mono: 'Menlo', 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    overflow: hidden;
+    font-family: var(--mono);
+  }
+
+  main {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #sprite {
+    height: 70vh;
+    image-rendering: auto;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  #cli {
+    position: fixed;
+    bottom: 20px; left: 30px;
+    font-size: 35px;
+    z-index: 10;
+    white-space: pre;
+    user-select: none;
+  }
+  #cli .prompt { font-weight: 700; }
+  #cli-display { font-weight: 500; }
+  #cli-display.ghost { color: rgba(17, 17, 17, 0.35); }
+  #caret {
+    font-weight: 700;
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { to { opacity: 0; } }
+
+  #debug {
+    position: fixed;
+    top: 16px; right: 16px;
+    width: 360px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid var(--ink);
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.4;
+    z-index: 20;
+    max-height: 92vh;
+    overflow-y: auto;
+  }
+  #debug h3 {
+    margin: 0 0 6px 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+  #debug details { margin-bottom: 8px; }
+  #debug summary { cursor: pointer; font-weight: 700; }
+  #debug label {
+    display: flex; justify-content: space-between; align-items: center;
+    margin: 3px 0; gap: 8px;
+  }
+  #debug input, #debug select {
+    font: inherit; font-size: 11px;
+    width: 130px; padding: 2px 4px;
+    border: 1px solid #888; background: white;
+  }
+  #debug .presets { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  #debug .presets button {
+    font: inherit; font-size: 11px;
+    padding: 3px 7px; cursor: pointer;
+    border: 1px solid #888; background: white;
+  }
+  #debug .presets button:hover { background: var(--bg); }
+  #debug .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin: 2px 0; }
+  #debug .row .v { text-align: right; font-weight: 700; }
+  #debug .reaction {
+    font-size: 36px;
+    text-align: center;
+    padding: 8px 0;
+    border-top: 1px dashed #888;
+    border-bottom: 1px dashed #888;
+    margin: 6px 0;
+  }
+  #debug .echo {
+    font-style: italic;
+    color: #444;
+    word-wrap: break-word;
+    margin-bottom: 6px;
+  }
+  #debug .pill {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--ink); color: var(--bg);
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  #debug .toggle {
+    position: absolute;
+    top: 6px; right: 8px;
+    cursor: pointer;
+    font-size: 11px;
+    color: #555;
+  }
+  body.no-debug #debug { display: none; }
+  /* Submission mode (?live=1): hide all of dev chrome. The sprite + CLI are
+     all the user gets. No overrides, no presets, no diagnostic rows. */
+  body.live-mode #debug { display: none; }
+</style>
+</head>
+<body>
+
+<main>
+  <img id="sprite" alt="Wellington-chan" draggable="false" />
+</main>
+
+<div id="cli"><span class="prompt">&gt;</span><span id="cli-display"></span><span id="caret">_</span></div>
+
+<script src="wellington_data.js"></script>
+<script src="landmarks_data.js"></script>
+<script src="vocab.js"></script>
+<script src="metlink_static.js"></script>
+
+<aside id="debug">
+  <span class="toggle" id="debug-toggle">[hide]</span>
+  <h3>Wellington-chan · bug-test</h3>
+
+  <div class="echo" id="echo">type a query and press enter</div>
+
+  <div class="reaction" id="reaction">💤</div>
+
+  <div id="result-rows"></div>
+
+  <details open>
+    <summary>Presets</summary>
+    <div class="presets">
+      <button type="button" data-preset="happy">😄 Happy</button>
+      <button type="button" data-preset="content">🙂 Content</button>
+      <button type="button" data-preset="uneasy">😐 Uneasy</button>
+      <button type="button" data-preset="shiver">😟 Shiver</button>
+      <button type="button" data-preset="distressed">😨 Distressed</button>
+    </div>
+    <div class="presets" style="margin-top:6px">
+      <button type="button" id="fetch-weather">🌐 fetch live weather</button>
+      <button type="button" id="fetch-location">📍 use my location</button>
+      <button type="button" id="fetch-now">🕐 now</button>
+      <button type="button" id="test-metlink">🔌 test Metlink</button>
+    </div>
+  </details>
+
+  <details>
+    <summary>Overrides</summary>
+    <label>now <input type="datetime-local" id="ov-now" /></label>
+    <label>origin <select id="ov-origin" style="width:170px"></select></label>
+    <label>temp °C <input type="number" id="ov-temp" step="0.5" value="15" /></label>
+    <label>precip mm/hr <input type="number" id="ov-precip" step="0.1" value="0" /></label>
+    <label>wind kph <input type="number" id="ov-wind" step="1" value="10" /></label>
+    <label>bus mins (blank = auto) <input type="number" id="ov-bus" step="1" placeholder="auto" /></label>
+    <label>alert
+      <select id="ov-alert">
+        <option value="none">none</option>
+        <option value="REDUCED_SERVICE">REDUCED_SERVICE</option>
+        <option value="SIGNIFICANT_DELAYS">SIGNIFICANT_DELAYS</option>
+        <option value="DETOUR">DETOUR</option>
+        <option value="NO_SERVICE">NO_SERVICE</option>
+      </select>
+    </label>
+  </details>
+
+  <details>
+    <summary>Try these</summary>
+    <div style="font-size:11px; line-height:1.6">
+      <div>Can I make it to Kelburn in 20 minutes?</div>
+      <div>Can I walk to Te Papa?</div>
+      <div>Should I go to Mt Victoria?</div>
+      <div>Is it nice outside?</div>
+      <div>What's the weather in Johnsonville?</div>
+      <div>Can I make it to Auckland?</div>
+      <div>When does the sun set?</div>
+    </div>
+  </details>
+</aside>
+
+<script>
+'use strict';
+
+// Default = submission/presentation mode: no debug panel, geolocation-only,
+// real APIs, every override field ignored. The marker opens the page and just
+// sees Wellington-chan and the CLI.
+// Pass ?debug=1 to bring back the debug panel + preset buttons + override
+// fields for local testing. `?live=1` is preserved as a harmless alias for
+// the default so any pre-existing bookmarks still work.
+const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
+const LIVE  = !DEBUG;
+
+const SPRITE_VERSION = Date.now();
+const ANIMATIONS = {
+  idle: {
+    frames: [0, 1, 2, 3].map(i =>
+      `Wellington Chan - idle/sprite_welly_idle${i}.png?v=${SPRITE_VERSION}`),
+    interval: 500,    // 2 fps
+    loops: Infinity,  // idle never auto-reverts
+    continuous: true, // wall-clock-driven so breathing stays in phase across reaction interruptions
+  },
+  sleep: {
+    frames: [0, 1, 2, 3].map(i =>
+      `Wellington Chan - sleep/sprite_welly_sleep${i}.png?v=${SPRITE_VERSION}`),
+    interval: 1000,   // 1 fps — half the speed of idle
+    loops: Infinity,  // plays forever until the page is refreshed
+    continuous: true, // wall-clock-driven so breathing stays in phase
+  },
+  happy: {
+    frames: [0, 1].map(i =>
+      `Wellington Chan - happy/sprite_welly_happy${i}.png?v=${SPRITE_VERSION}`),
+    interval: 500,    // 2 fps — 2 frames × 500ms = 1s reaction
+    loops: 2,
+  },
+  content: {
+    frames: [0, 1, 2, 3].map(i =>
+      `Wellington Chan - content/sprite_welly_content${i}.png?v=${SPRITE_VERSION}`),
+    interval: 250,    // 4 fps
+    loops: 2,
+  },
+  uneasy: {
+    frames: [0, 1, 2, 3, 4, 5].map(i =>
+      `Wellington Chan - uneasy/sprite_welly_uneasy${i}.png?v=${SPRITE_VERSION}`),
+    interval: 500,    // 4 fps — 6 frames × 250ms = 1.5s reaction
+    loops: 1,
+  },
+  shiver: {
+    frames: [0, 1, 2, 3, 4, 5, 6].map(i =>
+      `Wellington Chan - shiver/sprite_welly_shiver${i}.png?v=${SPRITE_VERSION}`),
+    interval: 250,    // 4 fps
+    loops: 1,         // play twice, then revert to idle
+  },
+  distressed: {
+    frames: [0, 1, 2, 3, 4].map(i =>
+      `Wellington Chan - distressed/sprite_welly_distressed${i}.png?v=${SPRITE_VERSION}`),
+    interval: 250,    // 4 fps — 5 frames × 250ms = 1.25s reaction
+    loops: 2,
+  },
+  confused: {
+    frames: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i =>
+      `Wellington Chan - confused/sprite_welly_confused${i}.png?v=${SPRITE_VERSION}`),
+    interval: 100,    // 10 fps
+    loops: 1,         // play once, then revert to idle
+  },
+};
+
+let currentAnim = 'idle';
+let frameIdx = 0;
+let animTimer = null;
+let revertTimer = null;
+// Fixed at page load. Continuous animations (idle's breathing) derive their
+// frame from elapsed wall-clock time since this epoch, so the rhythm stays in
+// phase across reaction interruptions and tab-backgrounding.
+const ANIM_EPOCH = Date.now();
+
+function startAnimation() {
+  const anim = ANIMATIONS[currentAnim] || ANIMATIONS.idle;
+  const sprite = document.getElementById('sprite');
+  const tick = () => {
+    let idx;
+    if (anim.continuous) {
+      // Wall-clock-driven: this animation's rhythm is rooted in real time, so
+      // interruptions don't shift its phase. Setting frameIdx isn't used here.
+      idx = Math.floor((Date.now() - ANIM_EPOCH) / anim.interval) % anim.frames.length;
+    } else {
+      // Discrete reaction: starts from frame 0 each time, advances per tick.
+      idx = frameIdx;
+      frameIdx = (frameIdx + 1) % anim.frames.length;
+    }
+    sprite.src = anim.frames[idx];
+  };
+  if (animTimer) clearInterval(animTimer);
+  tick();
+  animTimer = setInterval(tick, anim.interval);
+}
+
+function setAnimation(name) {
+  const target = ANIMATIONS[name] ? name : 'idle';
+
+  if (revertTimer) {
+    clearTimeout(revertTimer);
+    revertTimer = null;
+  }
+
+  if (currentAnim !== target) {
+    currentAnim = target;
+    frameIdx = 0;
+    startAnimation();
+  }
+
+  const anim = ANIMATIONS[target];
+  if (Number.isFinite(anim.loops)) {
+    const duration = anim.frames.length * anim.interval * anim.loops;
+    revertTimer = setTimeout(() => {
+      revertTimer = null;
+      currentAnim = 'idle';
+      frameIdx = 0;
+      startAnimation();
+    }, duration);
+  }
+}
+
+{
+  const sprite = document.getElementById('sprite');
+  sprite.addEventListener('error', () => {
+    const echo = document.getElementById('echo');
+    if (echo) echo.textContent = 'sprite failed to load';
+  });
+  for (const anim of Object.values(ANIMATIONS)) {
+    anim.frames.forEach(src => { const img = new Image(); img.src = src; });
+  }
+  startAnimation();
+}
+
+const SUBURB_LOOKUP = {};
+if (window.SUBURBS) {
+  for (const [name, data] of Object.entries(window.SUBURBS)) {
+    SUBURB_LOOKUP[name.toLowerCase()] = { lat: data.lat, lng: data.lng, suburb: name };
+  }
+}
+
+// Levenshtein edit distance. Iterative DP, O(m·n) time / O(n) space.
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+  const m = a.length, n = b.length;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1]
+        ? prev
+        : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+// Tracks the most recent fuzzy correction so run() can surface it in debug.
+// Cleared at the start of run() and set only when fuzzyResolvePlace succeeds.
+let lastFuzzyMatch = null;
+
+// Fallback called only when all exact-match paths in resolvePlace miss.
+// Returns null on tie (per design — better to say Confused than guess wrong).
+function fuzzyResolvePlace(query) {
+  const len = query.length;
+  if (len < 2) return null;
+  const maxDist = Math.min(3, Math.max(1, Math.floor(len * 0.25)));
+
+  const seen = new Set();
+  const candidates = [];
+  for (const k of Object.keys(window.LANDMARKS || {})) { if (!seen.has(k)) { seen.add(k); candidates.push(k); } }
+  for (const k of Object.keys(window.VOCAB?.placeAliases || {})) { if (!seen.has(k)) { seen.add(k); candidates.push(k); } }
+  for (const k of Object.keys(SUBURB_LOOKUP)) { if (!seen.has(k)) { seen.add(k); candidates.push(k); } }
+
+  let bestKey = null, bestDist = Infinity, runnerDist = Infinity;
+  for (const cand of candidates) {
+    if (Math.abs(cand.length - len) > maxDist) continue;  // length-prune
+    const d = levenshtein(query, cand);
+    if (d < bestDist) {
+      runnerDist = bestDist;
+      bestDist = d;
+      bestKey = cand;
+    } else if (d < runnerDist) {
+      runnerDist = d;
+    }
+  }
+
+  if (bestKey == null || bestDist > maxDist) return null;
+  if (bestDist === runnerDist) return null;  // ambiguous → Confused
+
+  lastFuzzyMatch = { from: query, to: bestKey, dist: bestDist };
+  return resolvePlace(bestKey);  // recurse into exact-match path
+}
+
+function resolvePlace(name) {
+  if (!name) return null;
+  const key = String(name).toLowerCase().trim();
+  if (window.LANDMARKS && window.LANDMARKS[key]) return window.LANDMARKS[key];
+  const aliased = window.VOCAB?.placeAliases?.[key];
+  if (aliased && SUBURB_LOOKUP[aliased.toLowerCase()]) return SUBURB_LOOKUP[aliased.toLowerCase()];
+  if (SUBURB_LOOKUP[key]) return SUBURB_LOOKUP[key];
+  return fuzzyResolvePlace(key);
+}
+
+const WGTN_BBOX = { minLat: -41.45, maxLat: -41.10, minLng: 174.6, maxLng: 175.0 };
+const NZ_BBOX   = { minLat: -47.5,  maxLat: -34.0,  minLng: 166.0, maxLng: 179.0 };
+
+function geoZone(c) {
+  if (!c) return 'none';
+  const inWgtn = c.lat >= WGTN_BBOX.minLat && c.lat <= WGTN_BBOX.maxLat
+              && c.lng >= WGTN_BBOX.minLng && c.lng <= WGTN_BBOX.maxLng;
+  if (inWgtn) return 'wgtn';
+  const inNZ = c.lat >= NZ_BBOX.minLat && c.lat <= NZ_BBOX.maxLat
+            && c.lng >= NZ_BBOX.minLng && c.lng <= NZ_BBOX.maxLng;
+  return inNZ ? 'nz_far' : 'foreign';
+}
+
+function normalize(text) {
+  let t = text.toLowerCase().trim()
+    .replace(/[?.!]+$/, '')
+    .replace(/[‘’‚‛`]/g, "'")
+    .replace(/[“”„‟]/g, '"');
+
+  if (window.VOCAB?.contractions) {
+    for (const [c, e] of Object.entries(window.VOCAB.contractions)) {
+      const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      t = t.replace(new RegExp(`\\b${escaped}\\b`, 'g'), e);
+    }
+  }
+  if (window.VOCAB?.timeWords) {
+    for (const [phrase, replacement] of Object.entries(window.VOCAB.timeWords)) {
+      const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      t = t.replace(new RegExp(`\\b${escaped}\\b`, 'g'), replacement);
+    }
+  }
+  // dynamic: "N hours" / "N hour" / "1.5 hours" → "N*60 min"
+  t = t.replace(/\b(\d+(?:\.\d+)?)\s*hours?\b/g, (_, n) => `${Math.round(parseFloat(n) * 60)} min`);
+
+  if (window.VOCAB?.fillers?.length) {
+    const re = new RegExp(`\\b(?:${window.VOCAB.fillers.join('|')})\\b`, 'g');
+    t = t.replace(re, '');
+  }
+  return t.replace(/[,;]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+const DAY_NAMES = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+function extractDateInfo(t) {
+  const fromVocab = window.VOCAB?.dateQualifiers || {};
+  for (const [word, info] of Object.entries(fromVocab)) {
+    if (new RegExp(`\\b${word}\\b`).test(t)) {
+      return { dateOffset: info.offset, dateLabel: info.label };
+    }
+  }
+  if (/\bthis weekend\b/.test(t)) {
+    const dow = new Date().getDay();
+    const offset = dow >= 6 ? (8 - dow) : (6 - dow);
+    return { dateOffset: offset, dateLabel: 'this weekend' };
+  }
+  for (let i = 0; i < 7; i++) {
+    if (new RegExp(`\\b${DAY_NAMES[i]}\\b`).test(t)) {
+      const cur = new Date().getDay();
+      let offset = (i - cur + 7) % 7;
+      if (offset === 0) offset = 7;
+      if (offset > 7) return {};
+      return { dateOffset: offset, dateLabel: DAY_NAMES[i] };
+    }
+  }
+  return {};
+}
+
+function classify(text) {
+  const t = normalize(text);
+  const dateInfo = extractDateInfo(t);
+
+  if (window.VOCAB?.queries) {
+    for (const tmpl of window.VOCAB.queries) {
+      for (const pattern of tmpl.patterns) {
+        const m = t.match(pattern);
+        if (!m) continue;
+        const groups = m.groups || {};
+        let place = groups.place ? groups.place.trim() : null;
+        if (!place && tmpl.profile === 'outdoors') {
+          const placeM = t.match(/\bin ([a-z\s]+?)(?:\s+(today|tomorrow|tonight|this weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday))?$/);
+          if (placeM) place = placeM[1].trim();
+        }
+        return {
+          profile: tmpl.profile,
+          polarity: tmpl.polarity || 'positive',
+          place,
+          deadline: groups.deadline ? parseInt(groups.deadline, 10) : (tmpl.defaults?.deadline ?? null),
+          ...dateInfo,
+        };
+      }
+    }
+  }
+
+  return { profile: 'confused', place: null, deadline: null };
+}
+
+// Temperature curve takes apparent_temperature ("feels like"), not raw temp —
+// captures wind-chill automatically. Peak widened to 15–25°C (winter-friendly:
+// a 15°C dry calm day reads as perfect, not Content).
+function tempNorm(t) {
+  if (t < 5) return 0;
+  if (t < 15) return (t - 5) / 10;      // 5°C → 0, 15°C → 1.0
+  if (t <= 25) return 1;                 // 15–25°C peak band
+  if (t < 30) return (30 - t) / 5;      // 25°C → 1.0, 30°C → 0
+  return 0;
+}
+function precipNorm(p) { return Math.max(0, Math.min(1, (5 - p) / 5)); }
+// Wind: no penalty under 15 km/h, soft falloff out to 60 km/h.
+// At 25 km/h (Wellington avg) → 0.78; at 35 km/h → 0.56; at 50 km/h → 0.22.
+function windNorm(w) {
+  if (w <= 15) return 1;
+  return Math.max(0, Math.min(1, (60 - w) / 45));
+}
+// Cloud cover 0–100% → sun_n. Sunny day boosts comfort; full overcast docks it.
+function sunNorm(cloudPct) {
+  if (cloudPct == null) return 0.5;  // unknown → neutral
+  return Math.max(0, Math.min(1, (100 - cloudPct) / 100));
+}
+// Weights: 50% temp / 30% rain / 10% wind / 10% sun.
+// Temp uses apparent (feels-like), so wind affects comfort both thermally
+// (via apparent_temperature) and mechanically (via wind_n). Different things.
+function weatherComfort(t, p, w, c) {
+  return 0.5 * tempNorm(t) + 0.3 * precipNorm(p) + 0.1 * windNorm(w) + 0.1 * sunNorm(c);
+}
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+function walkMinutes(distKm) {
+  if (distKm > 5) return Infinity;
+  return distKm * 1.3 / 5 * 60;
+}
+
+// --- Metlink routing (Phase 2: scheduled-only, no live data yet) ---
+
+const METLINK_WALK_RADIUS_KM = 0.6;   // candidate stops within 600m of origin/dest
+const METLINK_AVG_WAIT_MIN = 5;       // placeholder — Phase 3 replaces with live stop-predictions
+
+function nearbyStops(coords, radiusKm = METLINK_WALK_RADIUS_KM) {
+  if (!window.METLINK_STATIC?.stops) return [];
+  const out = [];
+  for (const [sid, [lat, lng]] of Object.entries(window.METLINK_STATIC.stops)) {
+    const d = haversineKm(coords, { lat, lng });
+    if (d <= radiusKm) out.push({ id: sid, lat, lng, dist: d });
+  }
+  out.sort((a, b) => a.dist - b.dist);
+  return out;
+}
+
+function findBusPath(origin, dest) {
+  const ms = window.METLINK_STATIC;
+  if (!ms) return null;
+
+  const originStops = nearbyStops(origin);
+  const destStops   = nearbyStops(dest);
+  if (!originStops.length || !destStops.length) return null;
+
+  const destStopMap = new Map(destStops.map(s => [s.id, s]));
+  let best = null;
+
+  for (const oStop of originStops) {
+    const oWalkMin = walkMinutes(oStop.dist);
+    const patternIds = ms.stop_patterns[oStop.id] || [];
+
+    for (const pid of patternIds) {
+      const pattern = ms.patterns[pid];
+      if (!pattern) continue;
+
+      const oIdx = pattern.s.findIndex(([sid]) => sid === oStop.id);
+      if (oIdx < 0) continue;
+      const oT = pattern.s[oIdx][1];
+
+      for (let dIdx = oIdx + 1; dIdx < pattern.s.length; dIdx++) {
+        const [dSid, dT] = pattern.s[dIdx];
+        const dStop = destStopMap.get(dSid);
+        if (!dStop) continue;
+
+        const rideMin = (dT - oT) / 60;
+        if (rideMin <= 0) continue;
+
+        const dWalkMin = walkMinutes(dStop.dist);
+        const totalMin = oWalkMin + METLINK_AVG_WAIT_MIN + rideMin + dWalkMin;
+
+        if (!best || totalMin < best.totalMin) {
+          best = {
+            totalMin,
+            originStop: { id: oStop.id, walkMin: oWalkMin, distKm: oStop.dist },
+            destStop:   { id: dSid,   walkMin: dWalkMin, distKm: dStop.dist },
+            patternId: pid,
+            routeId: pattern.r,
+            routeShortName: ms.routes[pattern.r]?.n ?? pattern.r,
+            direction: pattern.d,
+            rideMin,
+            waitMin: METLINK_AVG_WAIT_MIN,
+            waitSource: 'scheduled',  // Phase 3 will set this to 'live' when available
+          };
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+const ALERT_SEVERITY = {
+  NO_SERVICE: 1.0,
+  SIGNIFICANT_DELAYS: 0.6,
+  DETOUR: 0.6,
+  REDUCED_SERVICE: 0.3,
+  STOP_MOVED: 0.3,
+};
+function transitConfidence(alerts) {
+  const penalty = alerts.reduce((s, a) => s + (ALERT_SEVERITY[a] ?? 0.1), 0);
+  return Math.max(0, Math.min(1, 1 - penalty));
+}
+
+const PROFILES = {
+  commuter_bus:  { journey: 0.45, weather: 0.30, transit: 0.25 },
+  commuter_walk: { journey: 0.30, weather: 0.70, transit: 0.00 },
+  wayfinder:     { journey: 0.10, weather: 0.50, transit: 0.40 },
+  pedestrian:    { journey: 0.30, weather: 0.70, transit: 0.00 },
+  outdoors:      { journey: 0.00, weather: 1.00, transit: 0.00 },
+  holistic:      { journey: 0.10, weather: 0.70, transit: 0.20 },
+};
+
+const WEATHER_CACHE = new Map();
+const WEATHER_TTL_MS = 5 * 60 * 1000;
+
+async function fetchWeather(lat, lng, dateOffset = 0) {
+  const key = `${lat.toFixed(3)},${lng.toFixed(3)},${dateOffset}`;
+  const cached = WEATHER_CACHE.get(key);
+  if (cached && Date.now() - cached.t < WEATHER_TTL_MS) return cached.data;
+
+  const base = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&timezone=Pacific/Auckland`;
+  let data;
+
+  if (dateOffset === 0) {
+    const url = base + '&current=temperature_2m,apparent_temperature,precipitation,wind_speed_10m,cloud_cover,weather_code,is_day';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+    const c = json.current;
+    if (!c) throw new Error('no current data');
+    data = {
+      temp:       c.temperature_2m,
+      feelsLike:  c.apparent_temperature,
+      precip:     c.precipitation,
+      wind:       c.wind_speed_10m,
+      cloud:      c.cloud_cover,
+      weatherCode: c.weather_code,
+      isDay:      c.is_day === 1,
+    };
+  } else {
+    const target = new Date();
+    target.setDate(target.getDate() + dateOffset);
+    const pad = n => String(n).padStart(2, '0');
+    const dateStr = `${target.getFullYear()}-${pad(target.getMonth()+1)}-${pad(target.getDate())}`;
+    const url = base
+      + '&daily=temperature_2m_max,temperature_2m_min,apparent_temperature_max,precipitation_sum,wind_speed_10m_max,cloud_cover_mean,weather_code'
+      + `&start_date=${dateStr}&end_date=${dateStr}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+    const d = json.daily;
+    if (!d || !d.time || !d.time.length) throw new Error('no daily data');
+    data = {
+      temp:       d.temperature_2m_max[0],
+      feelsLike:  d.apparent_temperature_max?.[0] ?? d.temperature_2m_max[0],
+      precip:     d.precipitation_sum[0] / 24,
+      wind:       d.wind_speed_10m_max[0],
+      cloud:      d.cloud_cover_mean?.[0],
+      weatherCode: d.weather_code[0],
+      isDay:      true,
+      dateStr,
+    };
+  }
+
+  WEATHER_CACHE.set(key, { data, t: Date.now() });
+  return data;
+}
+
+// === Metlink live data ===
+// Key is published — rotate after the assessment is graded. See README.
+const METLINK = {
+  base: 'https://api.opendata.metlink.org.nz',
+  key:  'ZAb8wNN4tR1Ry2zNmM9Jd9hmNTSmPwYR39aP0ZTy',
+  predictionTtlMs: 30 * 1000,
+  alertsTtlMs:     60 * 1000,
+};
+
+const PREDICTIONS_CACHE = new Map();   // stop_id → { data, t }
+let alertsCache = null;                // single global alerts cache
+
+async function metlinkFetch(path) {
+  const resp = await fetch(`${METLINK.base}${path}`, {
+    headers: { 'x-api-key': METLINK.key },
+  });
+  if (!resp.ok) throw new Error(`Metlink ${resp.status}`);
+  return resp;
+}
+
+async function fetchStopPredictions(stopId) {
+  const cached = PREDICTIONS_CACHE.get(stopId);
+  if (cached && Date.now() - cached.t < METLINK.predictionTtlMs) return cached.data;
+  const resp = await metlinkFetch(`/v1/stop-predictions?stop_id=${encodeURIComponent(stopId)}`);
+  const data = await resp.json();
+  PREDICTIONS_CACHE.set(stopId, { data, t: Date.now() });
+  return data;
+}
+
+// Return { waitMin, isLive } for earliest matching departure, or null.
+function liveWaitFromPredictions(predictions, routeShortName) {
+  const now = Date.now();
+  const matches = (predictions?.departures || [])
+    .map(d => {
+      const iso = d.departure?.expected || d.departure?.aimed;
+      if (!iso) return null;
+      // Metlink uses route public short name in `service_id` (e.g. "21", not "210")
+      if (d.service_id !== routeShortName) return null;
+      return { t: new Date(iso).getTime(), isLive: !!d.departure?.expected };
+    })
+    .filter(x => x && x.t > now)
+    .sort((a, b) => a.t - b.t);
+  if (!matches.length) return null;
+  return { waitMin: (matches[0].t - now) / 60000, isLive: matches[0].isLive };
+}
+
+// GTFS-RT alerts: try JSON. If the endpoint returns protobuf we skip — the
+// ov-alert dropdown remains the override. Documented in the journal as a
+// deliberate scope cut.
+async function fetchServiceAlerts() {
+  if (alertsCache && Date.now() - alertsCache.t < METLINK.alertsTtlMs) return alertsCache.data;
+  try {
+    const resp = await metlinkFetch('/v1/gtfs-rt/servicealerts');
+    const ct = resp.headers.get('content-type') || '';
+    if (!ct.includes('json')) {
+      alertsCache = { data: null, t: Date.now(), reason: 'protobuf' };
+      return null;
+    }
+    const data = await resp.json();
+    alertsCache = { data, t: Date.now() };
+    return data;
+  } catch (err) {
+    alertsCache = { data: null, t: Date.now(), reason: String(err.message) };
+    return null;
+  }
+}
+
+// Extract our severity strings for alerts affecting routeId
+function alertsForRoute(alertsResponse, routeId) {
+  if (!alertsResponse?.entity) return [];
+  const KNOWN = new Set(['NO_SERVICE','SIGNIFICANT_DELAYS','DETOUR','REDUCED_SERVICE','STOP_MOVED']);
+  const out = [];
+  for (const e of alertsResponse.entity) {
+    const a = e.alert;
+    if (!a) continue;
+    const affects = (a.informed_entity || []).some(i => i.route_id === routeId);
+    if (!affects) continue;
+    if (KNOWN.has(a.effect)) out.push(a.effect);
+  }
+  return out;
+}
+
+function profileScore(name, comp) {
+  const w = PROFILES[name];
+  return (w.journey ?? 0) * (comp.journey ?? 0)
+       + (w.weather ?? 0) * (comp.weather ?? 0)
+       + (w.transit ?? 0) * (comp.transit ?? 0);
+}
+
+function softCap(profile, score, journeyRaw) {
+  if (profile === 'outdoors') return score;
+  if (journeyRaw == null) return score;
+  if (journeyRaw < 0)   return Math.min(score, 0.25);
+  if (journeyRaw < 0.1) return Math.min(score, 0.40);
+  return score;
+}
+
+const REACTIONS = [
+  { name: 'happy',      min: 0.85, emoji: '😄' },
+  { name: 'content',    min: 0.70, emoji: '🙂' },
+  { name: 'uneasy',     min: 0.50, emoji: '😐' },
+  { name: 'shiver',     min: 0.30, emoji: '😟' },
+  { name: 'distressed', min: 0.00, emoji: '😨' },
+];
+const CONFUSED = { name: 'confused', emoji: '❓' };
+function reactionFor(score) {
+  return REACTIONS.find(r => score >= r.min);
+}
+
+let userLocation = null;  // set by 📍 button (dev) or auto-prompt (live mode)
+let geoStatus = 'pending'; // 'pending' | 'granted' | 'denied' — only used in LIVE mode
+
+function readOverrides() {
+  // LIVE mode: every override is dead. Geolocation is the only origin source;
+  // weather is fetched live in run(); time is now; alerts come from API only.
+  if (LIVE) {
+    return {
+      now: new Date(),
+      originName: '📍 you',
+      origin: userLocation,         // null if denied → run() short-circuits to asleep
+      weather: null,                // signals run() to always fetch live
+      busMin: null,
+      alerts: [],
+    };
+  }
+
+  const $ = id => document.getElementById(id).value;
+  const nowVal = $('ov-now');
+  const now = nowVal ? new Date(nowVal) : new Date();
+
+  const alertSel = $('ov-alert');
+  const originName = $('ov-origin');
+  const origin = userLocation ?? resolvePlace(originName) ?? { lat: -41.293, lng: 174.776, suburb: 'Te Aro' };
+  return {
+    now,
+    originName: userLocation ? '📍 my location' : originName,
+    origin,
+    weather:  { temp: parseFloat($('ov-temp')), precip: parseFloat($('ov-precip')), wind: parseFloat($('ov-wind')) },
+    busMin:   (() => { const v = parseFloat($('ov-bus')); return Number.isFinite(v) ? v : null; })(),
+    alerts:   alertSel === 'none' ? [] : [alertSel],
+  };
+}
+
+function display(data) {
+  const echo = document.getElementById('echo');
+  echo.textContent = data.echo || '';
+
+  const reactionEl = document.getElementById('reaction');
+  reactionEl.textContent = data.reaction?.emoji ?? '❓';
+
+  setAnimation(data.reaction?.name);
+
+  const rowsEl = document.getElementById('result-rows');
+  const rows = [];
+  const r = (k, v) => rows.push(`<div class="row"><span>${k}</span><span class="v">${v}</span></div>`);
+
+  r('profile', `<span class="pill">${data.intent.profile}</span>`);
+  if (data.intent.polarity === 'negative') r('polarity', `<span class="pill">inverted</span>`);
+  if (data.origin)          r('origin', data.origin);
+  if (data.intent.place) {
+    const corr = data.intent.placeCorrection;
+    r('place', corr
+      ? `${data.intent.place} → ${corr} <span class="pill">fuzzy d=${data.intent.placeCorrectionDist}</span>`
+      : data.intent.place);
+  }
+  if (data.intent.deadline) r('deadline', data.intent.deadline + ' min');
+  if (data.zone)            r('geo zone', `<span class="pill">${data.zone}</span>`);
+  if (data.forecast)        r('forecast', data.forecast);
+  if (data.note)            r('note', data.note);
+
+  const fmtMin = m => (m == null) ? null : (Number.isFinite(m) ? m.toFixed(1) : '∞');
+  if (data.distKm   != null) r('distance (km)',  data.distKm.toFixed(2));
+  if (data.walkMin  != null) r('walk min',       fmtMin(data.walkMin));
+  if (data.busMin   != null) r('bus min (total)', fmtMin(data.busMin));
+  if (data.busPath) {
+    const bp = data.busPath;
+    r('bus route', `<span class="pill">${bp.routeShortName}</span>`);
+    r('  ↳ board at',  `stop ${bp.originStop.id} (${bp.originStop.distKm.toFixed(2)} km)`);
+    r('  ↳ alight at', `stop ${bp.destStop.id} (${bp.destStop.distKm.toFixed(2)} km)`);
+    r('  ↳ walk to stop',   fmtMin(bp.originStop.walkMin) + ' min');
+    r('  ↳ wait',           `${fmtMin(bp.waitMin)} min <span class="pill">${bp.waitSource}</span>`);
+    r('  ↳ ride',           fmtMin(bp.rideMin) + ' min');
+    r('  ↳ walk from stop', fmtMin(bp.destStop.walkMin) + ' min');
+    if (bp.alertSource) {
+      const label = bp.activeAlerts?.length ? bp.activeAlerts.join(', ') : 'none';
+      r('alerts', `${label} <span class="pill">${bp.alertSource}</span>`);
+    }
+  } else if (data.busMin === Infinity) {
+    r('bus path', '<span class="pill">none found</span>');
+  }
+  if (data.components) {
+    const c = data.components;
+    if (data.walkJourney != null) r('journey (walk)', data.walkJourney.toFixed(3));
+    if (data.busJourney  != null) r('journey (bus)',  data.busJourney.toFixed(3));
+    if (c.weather  != null) r('weather_comfort',     c.weather.toFixed(3));
+    if (c.transit  != null) r('transit_confidence',  c.transit.toFixed(3));
+  }
+  if (data.scoreBus  != null) r('score (bus path)',  data.scoreBus.toFixed(3));
+  if (data.scoreWalk != null) r('score (walk path)', data.scoreWalk.toFixed(3));
+  if (data.path)              r('chosen path', `<span class="pill">${data.path}</span>`);
+  if (data.score != null)     r('FINAL SCORE', `<b>${data.score.toFixed(3)}</b>`);
+  if (data.reaction)          r('reaction', `<span class="pill">${data.reaction.name}</span>`);
+
+  rowsEl.innerHTML = rows.join('');
+}
+
+async function run(text) {
+  lastFuzzyMatch = null;  // reset before classify/resolve so we can detect a fresh correction
+  const intent = classify(text);
+  const ov = readOverrides();
+  const echo = `> ${text}`;
+
+  // LIVE mode requires geolocation. Without it she stays asleep (idle sprite,
+  // no scoring). The value-capture critique made operational: the price of her
+  // empathy is your coordinates.
+  if (LIVE && !ov.origin) {
+    return display({
+      echo, intent, origin: '📍 unknown',
+      reaction: { name: geoStatus === 'denied' ? 'sleep' : 'idle', emoji: '💤' },
+      note: geoStatus === 'denied' ? 'location denied — Wellington-chan is asleep' : 'waiting for location…',
+      score: null,
+    });
+  }
+
+  if (intent.profile === 'confused') {
+    return display({ echo, intent, origin: ov.originName, reaction: CONFUSED, note: 'no matching pattern', score: null });
+  }
+
+  let dest = null;
+  if (intent.place) {
+    dest = resolvePlace(intent.place);
+    // If fuzzy fired and resolved against the typed string, capture the correction
+    // so the debug panel can show "kelborn → kelburn (fuzzy)".
+    if (dest && lastFuzzyMatch && lastFuzzyMatch.from === intent.place.toLowerCase().trim()) {
+      intent.placeCorrection = lastFuzzyMatch.to;
+      intent.placeCorrectionDist = lastFuzzyMatch.dist;
+    }
+    if (!dest) {
+      return display({
+        echo, intent, origin: ov.originName,
+        reaction: CONFUSED,
+        note: `place not recognised (${intent.place})`,
+        score: null,
+      });
+    }
+  }
+
+  const zone = dest ? geoZone(dest) : 'none';
+
+  let weatherSrc = ov.weather;
+  let forecastInfo = null;
+  // LIVE mode: always fetch fresh weather for the user's origin (or destination
+  // for outdoors queries with a place). No override path.
+  if (LIVE) {
+    const coords = (dest && intent.profile === 'outdoors') ? dest : ov.origin;
+    try {
+      const f = await fetchWeather(coords.lat, coords.lng, intent.dateOffset || 0);
+      weatherSrc = { temp: f.temp, feelsLike: f.feelsLike, precip: f.precip, wind: f.wind, cloud: f.cloud };
+      if (intent.dateOffset > 0) {
+        forecastInfo = `${intent.dateLabel} (${f.feelsLike.toFixed(1)}°C feels, ${f.precip.toFixed(1)}mm/h, ${f.wind.toFixed(0)}km/h, ${f.cloud ?? '?'}% cloud)`;
+      }
+    } catch (err) {
+      return display({
+        echo, intent, zone, origin: ov.originName,
+        reaction: { name: 'idle', emoji: '💤' },
+        note: `weather fetch failed: ${err.message}`,
+        score: null,
+      });
+    }
+  } else if (intent.dateOffset != null && intent.dateOffset > 0) {
+    document.getElementById('reaction').textContent = '⏳';
+    document.getElementById('echo').textContent = `${echo} … fetching ${intent.dateLabel}`;
+    try {
+      const coords = (dest && intent.profile === 'outdoors') ? dest : ov.origin;
+      const f = await fetchWeather(coords.lat, coords.lng, intent.dateOffset);
+      weatherSrc = { temp: f.temp, feelsLike: f.feelsLike, precip: f.precip, wind: f.wind, cloud: f.cloud };
+      forecastInfo = `${intent.dateLabel} (${f.feelsLike.toFixed(1)}°C feels, ${f.precip.toFixed(1)}mm/h, ${f.wind.toFixed(0)}km/h, ${f.cloud ?? '?'}% cloud)`;
+    } catch (err) {
+      return display({
+        echo, intent, zone, origin: ov.originName,
+        reaction: { name: 'down', emoji: '💤' },
+        note: `forecast fetch failed: ${err.message}`,
+        score: null,
+      });
+    }
+  }
+
+  // Feed apparent-temperature ("feels like") into the comfort curve, not raw temp.
+  // Dev-mode override fields still write to `temp`, so fall back to it when feelsLike is missing.
+  const feels = weatherSrc.feelsLike ?? weatherSrc.temp;
+  const wc = weatherComfort(feels, weatherSrc.precip, weatherSrc.wind, weatherSrc.cloud);
+  const comp = { weather: wc };
+
+  let distKm = null, walkMin = null, busMin = null, busPath = null;
+  let walkJourney = null, busJourney = null;
+  let walkJourneyRaw = null, busJourneyRaw = null;
+
+  if (dest) {
+    distKm = haversineKm(ov.origin, dest);
+    walkMin = walkMinutes(distKm);
+
+    if (zone === 'nz_far' || zone === 'foreign') {
+      busMin = Infinity;
+    } else if (ov.busMin != null) {
+      busMin = ov.busMin;
+    } else {
+      busPath = findBusPath(ov.origin, dest);
+      busMin = busPath ? busPath.totalMin : Infinity;
+
+      // Live overlay: replace the 5-min scheduled wait with the next bus
+      // prediction for this stop+route. Silent fallback on any failure.
+      if (busPath) {
+        try {
+          const preds = await fetchStopPredictions(busPath.originStop.id);
+          const live = liveWaitFromPredictions(preds, busPath.routeShortName);
+          if (live) {
+            busPath.waitMin = live.waitMin;
+            busPath.waitSource = live.isLive ? 'live' : 'aimed';
+            busPath.totalMin = busPath.originStop.walkMin
+                             + busPath.waitMin
+                             + busPath.rideMin
+                             + busPath.destStop.walkMin;
+            busMin = busPath.totalMin;
+          }
+        } catch (err) {
+          busPath.waitSource = 'scheduled (api ✗)';
+        }
+      }
+    }
+
+    const earliest = Math.min(walkMin, busMin);
+    const deadline = intent.deadline ?? (Number.isFinite(earliest) ? 1.5 * earliest : 60);
+
+    const rawOf = m => Number.isFinite(m) ? (deadline - m) / deadline : -Infinity;
+    walkJourneyRaw = rawOf(walkMin);
+    busJourneyRaw  = rawOf(busMin);
+    // Piecewise curve: ≥50% buffer reads as 1.0 (plenty of time); ramps to 0
+    // at the deadline. Replaces linear (deadline - arrival)/deadline, which
+    // never returned 1.0 for any real journey and made comfortable commutes
+    // feel "Uneasy". Raw value is unchanged so the soft cap still detects
+    // impossible / tight cases.
+    const journeyCurve = raw => Math.max(0, Math.min(1, 2 * raw));
+    walkJourney = journeyCurve(walkJourneyRaw);
+    busJourney  = journeyCurve(busJourneyRaw);
+
+    // Live alerts: if we have a chosen route and the GTFS-RT endpoint returns
+    // anything, those override the ov-alert dropdown. Dropdown remains a manual
+    // override for demos when there are no real alerts in the wild.
+    let activeAlerts = ov.alerts;
+    let alertSource = ov.alerts.length ? 'manual' : 'none';
+    if (busPath) {
+      try {
+        const allAlerts = await fetchServiceAlerts();
+        const live = alertsForRoute(allAlerts, busPath.routeId);
+        if (live.length) {
+          activeAlerts = live;
+          alertSource = 'live';
+        } else if (allAlerts != null && !ov.alerts.length) {
+          alertSource = 'live (clear)';
+        }
+      } catch { /* silent fallback */ }
+    }
+    comp.transit = transitConfidence(activeAlerts);
+    comp.journey = (intent.profile === 'pedestrian') ? walkJourney : busJourney;
+    if (busPath) {
+      busPath.activeAlerts = activeAlerts;
+      busPath.alertSource = alertSource;
+    }
+  }
+
+  let score, scoreBus, scoreWalk, path;
+  if (intent.profile === 'commuter') {
+    const walkComp = { ...comp, journey: walkJourney };
+    const busComp  = { ...comp, journey: busJourney };
+    scoreBus  = softCap('commuter', profileScore('commuter_bus',  busComp),  busJourneyRaw);
+    scoreWalk = softCap('commuter', profileScore('commuter_walk', walkComp), walkJourneyRaw);
+    score = Math.max(scoreBus, scoreWalk);
+    path = scoreBus >= scoreWalk ? 'bus' : 'walk';
+  } else {
+    let raw = null;
+    if (intent.profile === 'pedestrian') raw = walkJourneyRaw;
+    else if (intent.profile === 'wayfinder' || intent.profile === 'holistic') raw = busJourneyRaw;
+    score = softCap(intent.profile, profileScore(intent.profile, comp), raw);
+  }
+
+  if (intent.polarity === 'negative') {
+    score = 1 - score;
+    if (scoreBus  != null) scoreBus  = 1 - scoreBus;
+    if (scoreWalk != null) scoreWalk = 1 - scoreWalk;
+  }
+
+  display({
+    echo, intent, zone, origin: ov.originName,
+    components: comp,
+    distKm, walkMin, busMin, walkJourney, busJourney,
+    busPath,
+    scoreBus, scoreWalk, path,
+    score,
+    reaction: reactionFor(score),
+    forecast: forecastInfo,
+  });
+}
+
+const cliEl = document.getElementById('cli-display');
+let buffer = '';
+
+// ─── Tutorial: ghost prompts that cycle in the CLI until the user types ───
+// Plays once on load, abandons forever the moment the user presses a key
+// that the CLI would care about.
+const TUTORIAL_PROMPTS = [
+  'Hello!',
+  'Is it nice outside?',
+  'Can I walk to Te Papa?',
+  'Can I make it to Kelburn in 20 minutes?',
+  'Should I go to Mt Victoria?',
+];
+const TUTORIAL_TYPE_MS = 70;     // per-character speed for typing AND deleting
+const TUTORIAL_HOLD_MS = 1500;   // pause at full length before deletion begins
+const TUTORIAL_PAUSE_MS = 700;   // settle before first prompt AND between prompts
+
+let userHasTyped = false;
+let tutorialGen = 0;             // bumped to invalidate any in-flight cycle
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function runTutorial() {
+  const myGen = ++tutorialGen;
+  cliEl.classList.add('ghost');
+  await sleep(TUTORIAL_PAUSE_MS);
+  if (userHasTyped || myGen !== tutorialGen) return;
+  while (!userHasTyped && myGen === tutorialGen) {
+    for (const prompt of TUTORIAL_PROMPTS) {
+      // type forward, char by char
+      for (let i = 1; i <= prompt.length; i++) {
+        if (userHasTyped || myGen !== tutorialGen) return;
+        cliEl.textContent = prompt.slice(0, i);
+        await sleep(TUTORIAL_TYPE_MS);
+      }
+      // hold full length
+      await sleep(TUTORIAL_HOLD_MS);
+      if (userHasTyped || myGen !== tutorialGen) return;
+      // delete backward, char by char
+      for (let i = prompt.length - 1; i >= 0; i--) {
+        if (userHasTyped || myGen !== tutorialGen) return;
+        cliEl.textContent = prompt.slice(0, i);
+        await sleep(TUTORIAL_TYPE_MS);
+      }
+      // settle before the next prompt begins typing
+      await sleep(TUTORIAL_PAUSE_MS);
+      if (userHasTyped || myGen !== tutorialGen) return;
+    }
+  }
+}
+
+function stopTutorial() {
+  userHasTyped = true;
+  tutorialGen++;                 // invalidate any in-flight cycle
+  cliEl.classList.remove('ghost');
+  cliEl.textContent = buffer;    // wipe ghost text; real keystroke writes next
+}
+
+window.addEventListener('keydown', e => {
+  if (document.activeElement && document.activeElement.closest('#debug')) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+  // Any CLI-meaningful keystroke kills the tutorial on first press.
+  const handled = e.key === 'Enter' || e.key === 'Backspace'
+               || e.key === 'Escape' || e.key.length === 1;
+  if (handled && !userHasTyped) stopTutorial();
+
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const text = buffer.trim();
+    buffer = '';
+    cliEl.textContent = '';
+    if (text) run(text).catch(err => console.error('run error:', err));
+  } else if (e.key === 'Backspace') {
+    e.preventDefault();
+    buffer = buffer.slice(0, -1);
+    cliEl.textContent = buffer;
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    buffer = '';
+    cliEl.textContent = '';
+  } else if (e.key.length === 1) {
+    e.preventDefault();
+    buffer += e.key;
+    cliEl.textContent = buffer;
+  }
+});
+
+// DEBUG mode: start the tutorial immediately. LIVE mode defers it to the
+// geolocation callback so a denied user (asleep) never sees ghost prompts.
+if (!LIVE) runTutorial();
+
+{
+  const sel = document.getElementById('ov-origin');
+  const names = window.SUBURBS ? Object.keys(window.SUBURBS).sort() : [];
+  for (const n of names) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = `${n} (${window.SUBURBS[n].stops})`;
+    if (n === 'Te Aro') opt.selected = true;
+    sel.appendChild(opt);
+  }
+  if (!names.length) {
+    const opt = document.createElement('option');
+    opt.value = 'Te Aro'; opt.textContent = 'Te Aro (fallback)';
+    sel.appendChild(opt);
+  }
+}
+
+// LIVE mode bootstrap: hide dev chrome, auto-prompt geolocation, pre-fetch
+// current weather so the first query feels snappy. If permission is denied,
+// userLocation stays null and run() will short-circuit to the asleep state.
+if (LIVE) {
+  document.body.classList.add('live-mode');
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        userLocation = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          suburb: '📍 you',
+        };
+        geoStatus = 'granted';
+        fetchWeather(userLocation.lat, userLocation.lng).catch(() => {});
+        runTutorial();   // only start the ghost-prompt tutorial once she's awake
+      },
+      err => {
+        geoStatus = 'denied';
+        console.warn('Geolocation denied:', err.message);
+        setAnimation('sleep');   // visible-without-explanation feedback: she nods off
+      },
+      { timeout: 8000, maximumAge: 60000 }
+    );
+  } else {
+    geoStatus = 'denied';
+    setAnimation('sleep');       // browser doesn't support geolocation at all
+  }
+}
+
+function localDateTimeStr(hh, mm) {
+  const d = new Date();
+  d.setHours(hh, mm, 0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Each preset is tuned so that "is it nice outside?" (Outdoors profile,
+// weather-only scoring) lands inside the matching reaction band.
+const PRESETS = {
+  happy:      { _nowAt: '14:00', 'ov-temp': 19, 'ov-precip': 0,   'ov-wind': 8,  'ov-alert': 'none' },
+  content:    { _nowAt: '11:00', 'ov-temp': 13, 'ov-precip': 0,   'ov-wind': 25, 'ov-alert': 'none' },
+  uneasy:     { _nowAt: '15:00', 'ov-temp': 11, 'ov-precip': 1,   'ov-wind': 20, 'ov-alert': 'none' },
+  shiver:     { _nowAt: '18:00', 'ov-temp': 8,  'ov-precip': 2,   'ov-wind': 25, 'ov-alert': 'none' },
+  distressed: { _nowAt: '21:00', 'ov-temp': 9,  'ov-precip': 4.5, 'ov-wind': 35, 'ov-alert': 'NO_SERVICE' },
+};
+document.getElementById('fetch-weather').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const ov = readOverrides();
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ fetching…';
+  try {
+    const data = await fetchWeather(ov.origin.lat, ov.origin.lng);
+    document.getElementById('ov-temp').value   = data.temp.toFixed(1);
+    document.getElementById('ov-precip').value = data.precip.toFixed(1);
+    document.getElementById('ov-wind').value   = data.wind.toFixed(0);
+    btn.textContent = `✓ ${data.temp}°C · ${data.precip}mm · ${data.wind}km/h`;
+  } catch (err) {
+    btn.textContent = `✗ ${String(err.message).slice(0, 28)}`;
+    console.error('Open-Meteo fetch failed:', err);
+  }
+  setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 4000);
+});
+
+// Sanity-test the Metlink API from wherever the page is hosted. Verifies the
+// API key works AND that CORS allows the request from this origin. Tests one
+// well-known busy stop (5500 — Lambton Quay) and the alerts endpoint.
+document.getElementById('test-metlink').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ testing…';
+  try {
+    const [predsResp, alertsResp] = await Promise.allSettled([
+      fetchStopPredictions('5500'),
+      fetchServiceAlerts(),
+    ]);
+    const predsOK   = predsResp.status === 'fulfilled' && (predsResp.value?.departures?.length ?? 0) > 0;
+    const alertsOK  = alertsResp.status === 'fulfilled' && alertsResp.value != null;
+    const alertsReason = alertsCache?.reason ? ` (${alertsCache.reason})` : '';
+    btn.textContent = `${predsOK ? '✓' : '✗'} preds · ${alertsOK ? '✓' : '✗'} alerts${alertsReason}`;
+    console.log('Metlink test — predictions:', predsResp);
+    console.log('Metlink test — alerts:',      alertsResp);
+  } catch (err) {
+    btn.textContent = `✗ ${String(err.message).slice(0, 28)}`;
+    console.error('Metlink test failed:', err);
+  }
+  setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 8000);
+});
+
+document.getElementById('fetch-location').addEventListener('click', (e) => {
+  const btn = e.currentTarget;
+  if (userLocation) {
+    userLocation = null;
+    btn.textContent = '📍 use my location';
+    return;
+  }
+  if (!navigator.geolocation) {
+    btn.textContent = '✗ no geolocation';
+    setTimeout(() => { btn.textContent = '📍 use my location'; }, 3000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '⏳ locating…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userLocation = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        suburb: '📍 my location',
+      };
+      btn.textContent = `📍 ${userLocation.lat.toFixed(3)}, ${userLocation.lng.toFixed(3)} ✕`;
+      btn.disabled = false;
+    },
+    err => {
+      userLocation = null;
+      btn.textContent = `✗ ${err.code === 1 ? 'denied' : 'location failed'}`;
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = '📍 use my location'; }, 3000);
+    },
+    { timeout: 8000, maximumAge: 60000 },
+  );
+});
+
+document.getElementById('fetch-now').addEventListener('click', () => {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('ov-now').value =
+    `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+});
+
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const config = PRESETS[btn.dataset.preset];
+    for (const [id, val] of Object.entries(config)) {
+      if (id === '_nowAt') {
+        const el = document.getElementById('ov-now');
+        if (val == null) el.value = '';
+        else {
+          const [h, m] = val.split(':').map(Number);
+          el.value = localDateTimeStr(h, m);
+        }
+        continue;
+      }
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    }
+  });
+});
+
+document.getElementById('debug-toggle').addEventListener('click', () => {
+  document.body.classList.toggle('no-debug');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === '`' && (e.metaKey || e.ctrlKey)) {
+    document.body.classList.toggle('no-debug');
+  }
+});
+</script>
+</body>
+</html>
