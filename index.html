@@ -229,38 +229,38 @@ const ANIMATIONS = {
   happy: {
     frames: [0, 1].map(i =>
       `Wellington Chan - happy/sprite_welly_happy${i}.png?v=${SPRITE_VERSION}`),
-    interval: 500,    // 2 fps — 2 frames × 500ms = 1s reaction
+    interval: 500,    // 2 frames × 500ms × 2 loops = 2.0s
     loops: 2,
   },
   content: {
     frames: [0, 1, 2, 3].map(i =>
       `Wellington Chan - content/sprite_welly_content${i}.png?v=${SPRITE_VERSION}`),
-    interval: 250,    // 4 fps
+    interval: 250,    // 4 frames × 250ms × 2 loops = 2.0s
     loops: 2,
   },
   uneasy: {
     frames: [0, 1, 2, 3, 4, 5].map(i =>
       `Wellington Chan - uneasy/sprite_welly_uneasy${i}.png?v=${SPRITE_VERSION}`),
-    interval: 500,    // 4 fps — 6 frames × 250ms = 1.5s reaction
+    interval: 400,    // 6 frames × 400ms × 1 loop = 2.4s
     loops: 1,
   },
   shiver: {
     frames: [0, 1, 2, 3, 4, 5, 6].map(i =>
       `Wellington Chan - shiver/sprite_welly_shiver${i}.png?v=${SPRITE_VERSION}`),
-    interval: 250,    // 4 fps
-    loops: 1,         // play twice, then revert to idle
+    interval: 250,    // 7 frames × 250ms × 1 loop = 1.75s
+    loops: 1,
   },
   distressed: {
     frames: [0, 1, 2, 3, 4].map(i =>
       `Wellington Chan - distressed/sprite_welly_distressed${i}.png?v=${SPRITE_VERSION}`),
-    interval: 250,    // 4 fps — 5 frames × 250ms = 1.25s reaction
+    interval: 250,    // 5 frames × 250ms × 2 loops = 2.5s
     loops: 2,
   },
   confused: {
     frames: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i =>
       `Wellington Chan - confused/sprite_welly_confused${i}.png?v=${SPRITE_VERSION}`),
-    interval: 100,    // 10 fps
-    loops: 1,         // play once, then revert to idle
+    interval: 100,    // 9 frames × 100ms × 1 loop = 0.9s (designed as one-shot, doesn't loop)
+    loops: 1,
   },
 };
 
