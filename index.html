@@ -542,9 +542,29 @@ function haversineKm(a, b) {
   const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
-function walkMinutes(distKm) {
+function walkMinutes(distKm, fromElev = null, toElev = null) {
   if (distKm > 5) return Infinity;
-  return distKm * 1.3 / 5 * 60;
+  const baseMin = distKm * 1.3 / 5 * 60;
+  if (fromElev == null || toElev == null) return baseMin;
+  // Tobler-inspired asymmetric topography adjustment. grade = rise/run (m/m).
+  // Uphill slows you down proportionally; downhill saves a little but caps at
+  // 0.8× (steep descents punish knees, not a real speedup). Walking from
+  // Te Aro (16m) to Kelburn (147m) over 1.7km = +7.7% grade → 1.31× longer.
+  const grade = (toElev - fromElev) / (distKm * 1000);
+  const slowdown = Math.max(0.8, 1 + grade * 4);
+  return baseMin * slowdown;
+}
+
+// Geocoded origins (LIVE mode) have lat/lng but no `elev`. Fall back to the
+// nearest suburb centroid's elevation — coarse but locally-correct.
+function nearestSuburbElev(coords) {
+  if (!window.SUBURBS) return null;
+  let bestElev = null, bestDist = Infinity;
+  for (const s of Object.values(window.SUBURBS)) {
+    const d = haversineKm(coords, { lat: s.lat, lng: s.lng });
+    if (d < bestDist) { bestDist = d; bestElev = s.elev ?? null; }
+  }
+  return bestElev;
 }
 
 // --- Metlink routing (Phase 2: scheduled-only, no live data yet) ---
@@ -867,6 +887,12 @@ function display(data) {
 
   const fmtMin = m => (m == null) ? null : (Number.isFinite(m) ? m.toFixed(1) : '∞');
   if (data.distKm   != null) r('distance (km)',  data.distKm.toFixed(2));
+  if (data.elev) {
+    const arrow = data.elev.gradePct >= 0 ? '⬆' : '⬇';
+    r('elev (from → to)', `${data.elev.from}m → ${data.elev.to}m`);
+    r('grade',            `${data.elev.gradePct.toFixed(1)}% ${arrow}`);
+    r('walk slowdown',    `${data.elev.slowdown.toFixed(2)}×`);
+  }
   if (data.walkMin  != null) r('walk min',       fmtMin(data.walkMin));
   if (data.busMin   != null) r('bus min (total)', fmtMin(data.busMin));
   if (data.busPath) {
@@ -992,9 +1018,21 @@ async function run(text) {
   let walkJourney = null, busJourney = null;
   let walkJourneyRaw = null, busJourneyRaw = null;
 
+  let elevInfo = null;
   if (dest) {
     distKm = haversineKm(ov.origin, dest);
-    walkMin = walkMinutes(distKm);
+    const fromElev = ov.origin.elev ?? nearestSuburbElev(ov.origin);
+    const toElev   = dest.elev ?? null;
+    walkMin = walkMinutes(distKm, fromElev, toElev);
+    if (fromElev != null && toElev != null) {
+      const grade = (toElev - fromElev) / (distKm * 1000);
+      const baseMin = distKm * 1.3 / 5 * 60;
+      elevInfo = {
+        from: fromElev, to: toElev,
+        gradePct: grade * 100,
+        slowdown: Number.isFinite(walkMin) ? walkMin / baseMin : 1,
+      };
+    }
 
     if (zone === 'nz_far' || zone === 'foreign') {
       busMin = Infinity;
@@ -1090,6 +1128,7 @@ async function run(text) {
     echo, intent, zone, origin: ov.originName,
     components: comp,
     distKm, walkMin, busMin, walkJourney, busJourney,
+    elev: elevInfo,
     busPath,
     scoreBus, scoreWalk, path,
     score,
