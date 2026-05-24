@@ -154,7 +154,7 @@
       <button type="button" data-preset="happy">😄 Happy</button>
       <button type="button" data-preset="content">🙂 Content</button>
       <button type="button" data-preset="uneasy">😐 Uneasy</button>
-      <button type="button" data-preset="shiver">😟 Shiver</button>
+      <button type="button" data-preset="uncomfortable">😟 Uncomfortable</button>
       <button type="button" data-preset="distressed">😨 Distressed</button>
     </div>
     <div class="presets" style="margin-top:6px">
@@ -1247,11 +1247,11 @@ function localDateTimeStr(hh, mm) {
 // Each preset is tuned so that "is it nice outside?" (Outdoors profile,
 // weather-only scoring) lands inside the matching reaction band.
 const PRESETS = {
-  happy:      { _nowAt: '14:00', 'ov-temp': 19, 'ov-precip': 0,   'ov-wind': 8,  'ov-alert': 'none' },
-  content:    { _nowAt: '11:00', 'ov-temp': 13, 'ov-precip': 0,   'ov-wind': 25, 'ov-alert': 'none' },
-  uneasy:     { _nowAt: '15:00', 'ov-temp': 11, 'ov-precip': 1,   'ov-wind': 20, 'ov-alert': 'none' },
-  shiver:     { _nowAt: '18:00', 'ov-temp': 8,  'ov-precip': 2,   'ov-wind': 25, 'ov-alert': 'none' },
-  distressed: { _nowAt: '21:00', 'ov-temp': 9,  'ov-precip': 4.5, 'ov-wind': 35, 'ov-alert': 'NO_SERVICE' },
+  happy:         { _nowAt: '14:00', 'ov-temp': 19, 'ov-precip': 0, 'ov-wind': 10, 'ov-alert': 'none' },
+  content:       { _nowAt: '11:00', 'ov-temp': 13, 'ov-precip': 0, 'ov-wind': 25, 'ov-alert': 'none' },
+  uneasy:        { _nowAt: '15:00', 'ov-temp': 11, 'ov-precip': 1, 'ov-wind': 20, 'ov-alert': 'none' },
+  uncomfortable: { _nowAt: '18:00', 'ov-temp': 8,  'ov-precip': 2, 'ov-wind': 25, 'ov-alert': 'none' },
+  distressed:    { _nowAt: '21:00', 'ov-temp': 4,  'ov-precip': 5, 'ov-wind': 35, 'ov-alert': 'none' },
 };
 document.getElementById('fetch-weather').addEventListener('click', async (e) => {
   const btn = e.currentTarget;
