@@ -169,7 +169,7 @@
     <summary>Overrides</summary>
     <label>now <input type="datetime-local" id="ov-now" /></label>
     <label>origin <select id="ov-origin" style="width:170px"></select></label>
-    <label>temp °C <input type="number" id="ov-temp" step="0.5" value="15" /></label>
+    <label>feels °C <input type="number" id="ov-feels" step="0.5" value="13" /></label>
     <label>precip mm/hr <input type="number" id="ov-precip" step="0.1" value="0" /></label>
     <label>wind kph <input type="number" id="ov-wind" step="1" value="10" /></label>
     <label>bus mins (blank = auto) <input type="number" id="ov-bus" step="1" placeholder="auto" /></label>
@@ -521,16 +521,15 @@ function windNorm(w) {
   if (w <= 15) return 1;
   return Math.max(0, Math.min(1, (60 - w) / 45));
 }
-// Cloud cover 0–100% → sun_n. Sunny day boosts comfort; full overcast docks it.
-function sunNorm(cloudPct) {
-  if (cloudPct == null) return 0.5;  // unknown → neutral
-  return Math.max(0, Math.min(1, (100 - cloudPct) / 100));
-}
-// Weights: 50% temp / 30% rain / 10% wind / 10% sun.
-// Temp uses apparent (feels-like), so wind affects comfort both thermally
-// (via apparent_temperature) and mechanically (via wind_n). Different things.
-function weatherComfort(t, p, w, c) {
-  return 0.5 * tempNorm(t) + 0.3 * precipNorm(p) + 0.1 * windNorm(w) + 0.1 * sunNorm(c);
+// Weights: 50% temp / 30% rain / 20% wind.
+// Temp input is always apparent ("feels-like"), so wind affects comfort
+// twice — thermally (via apparent_temperature) and mechanically (via wind_n).
+// These are different things: wind chill vs umbrellas flipping. Cloud cover
+// was removed as a deliberate scope cut — it affects aesthetics (sunny vs
+// overcast) more than comfort (warm vs cold, wet vs dry, calm vs windy),
+// and Wellington-chan is a comfort verdict, not an aesthetic one.
+function weatherComfort(feels, p, w) {
+  return 0.5 * tempNorm(feels) + 0.3 * precipNorm(p) + 0.2 * windNorm(w);
 }
 
 function haversineKm(a, b) {
@@ -671,18 +670,16 @@ async function fetchWeather(lat, lng, dateOffset = 0) {
   let data;
 
   if (dateOffset === 0) {
-    const url = base + '&current=temperature_2m,apparent_temperature,precipitation,wind_speed_10m,cloud_cover,weather_code,is_day';
+    const url = base + '&current=apparent_temperature,precipitation,wind_speed_10m,weather_code,is_day';
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json = await resp.json();
     const c = json.current;
     if (!c) throw new Error('no current data');
     data = {
-      temp:       c.temperature_2m,
-      feelsLike:  c.apparent_temperature,
+      feels:      c.apparent_temperature,
       precip:     c.precipitation,
       wind:       c.wind_speed_10m,
-      cloud:      c.cloud_cover,
       weatherCode: c.weather_code,
       isDay:      c.is_day === 1,
     };
@@ -692,7 +689,7 @@ async function fetchWeather(lat, lng, dateOffset = 0) {
     const pad = n => String(n).padStart(2, '0');
     const dateStr = `${target.getFullYear()}-${pad(target.getMonth()+1)}-${pad(target.getDate())}`;
     const url = base
-      + '&daily=temperature_2m_max,temperature_2m_min,apparent_temperature_max,precipitation_sum,wind_speed_10m_max,cloud_cover_mean,weather_code'
+      + '&daily=apparent_temperature_max,precipitation_sum,wind_speed_10m_max,weather_code'
       + `&start_date=${dateStr}&end_date=${dateStr}`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -700,11 +697,9 @@ async function fetchWeather(lat, lng, dateOffset = 0) {
     const d = json.daily;
     if (!d || !d.time || !d.time.length) throw new Error('no daily data');
     data = {
-      temp:       d.temperature_2m_max[0],
-      feelsLike:  d.apparent_temperature_max?.[0] ?? d.temperature_2m_max[0],
+      feels:      d.apparent_temperature_max[0],
       precip:     d.precipitation_sum[0] / 24,
       wind:       d.wind_speed_10m_max[0],
-      cloud:      d.cloud_cover_mean?.[0],
       weatherCode: d.weather_code[0],
       isDay:      true,
       dateStr,
@@ -852,7 +847,7 @@ function readOverrides() {
     now,
     originName: userLocation ? '📍 my location' : originName,
     origin,
-    weather:  { temp: parseFloat($('ov-temp')), precip: parseFloat($('ov-precip')), wind: parseFloat($('ov-wind')) },
+    weather:  { feels: parseFloat($('ov-feels')), precip: parseFloat($('ov-precip')), wind: parseFloat($('ov-wind')) },
     busMin:   (() => { const v = parseFloat($('ov-bus')); return Number.isFinite(v) ? v : null; })(),
     alerts:   alertSel === 'none' ? [] : [alertSel],
   };
@@ -978,9 +973,9 @@ async function run(text) {
     const coords = (dest && intent.profile === 'outdoors') ? dest : ov.origin;
     try {
       const f = await fetchWeather(coords.lat, coords.lng, intent.dateOffset || 0);
-      weatherSrc = { temp: f.temp, feelsLike: f.feelsLike, precip: f.precip, wind: f.wind, cloud: f.cloud };
+      weatherSrc = { feels: f.feels, precip: f.precip, wind: f.wind };
       if (intent.dateOffset > 0) {
-        forecastInfo = `${intent.dateLabel} (${f.feelsLike.toFixed(1)}°C feels, ${f.precip.toFixed(1)}mm/h, ${f.wind.toFixed(0)}km/h, ${f.cloud ?? '?'}% cloud)`;
+        forecastInfo = `${intent.dateLabel} (${f.feels.toFixed(1)}°C feels, ${f.precip.toFixed(1)}mm/h, ${f.wind.toFixed(0)}km/h)`;
       }
     } catch (err) {
       return display({
@@ -996,8 +991,8 @@ async function run(text) {
     try {
       const coords = (dest && intent.profile === 'outdoors') ? dest : ov.origin;
       const f = await fetchWeather(coords.lat, coords.lng, intent.dateOffset);
-      weatherSrc = { temp: f.temp, feelsLike: f.feelsLike, precip: f.precip, wind: f.wind, cloud: f.cloud };
-      forecastInfo = `${intent.dateLabel} (${f.feelsLike.toFixed(1)}°C feels, ${f.precip.toFixed(1)}mm/h, ${f.wind.toFixed(0)}km/h, ${f.cloud ?? '?'}% cloud)`;
+      weatherSrc = { feels: f.feels, precip: f.precip, wind: f.wind };
+      forecastInfo = `${intent.dateLabel} (${f.feels.toFixed(1)}°C feels, ${f.precip.toFixed(1)}mm/h, ${f.wind.toFixed(0)}km/h)`;
     } catch (err) {
       return display({
         echo, intent, zone, origin: ov.originName,
@@ -1008,10 +1003,8 @@ async function run(text) {
     }
   }
 
-  // Feed apparent-temperature ("feels like") into the comfort curve, not raw temp.
-  // Dev-mode override fields still write to `temp`, so fall back to it when feelsLike is missing.
-  const feels = weatherSrc.feelsLike ?? weatherSrc.temp;
-  const wc = weatherComfort(feels, weatherSrc.precip, weatherSrc.wind, weatherSrc.cloud);
+  // Single temperature input: apparent ("feels like"). Same in both modes.
+  const wc = weatherComfort(weatherSrc.feels, weatherSrc.precip, weatherSrc.wind);
   const comp = { weather: wc };
 
   let distKm = null, walkMin = null, busMin = null, busPath = null;
@@ -1286,11 +1279,11 @@ function localDateTimeStr(hh, mm) {
 // Each preset is tuned so that "is it nice outside?" (Outdoors profile,
 // weather-only scoring) lands inside the matching reaction band.
 const PRESETS = {
-  happy:         { _nowAt: '14:00', 'ov-temp': 19, 'ov-precip': 0, 'ov-wind': 10, 'ov-alert': 'none' },
-  content:       { _nowAt: '11:00', 'ov-temp': 13, 'ov-precip': 0, 'ov-wind': 25, 'ov-alert': 'none' },
-  uneasy:        { _nowAt: '15:00', 'ov-temp': 11, 'ov-precip': 1, 'ov-wind': 20, 'ov-alert': 'none' },
-  uncomfortable: { _nowAt: '18:00', 'ov-temp': 8,  'ov-precip': 2, 'ov-wind': 25, 'ov-alert': 'none' },
-  distressed:    { _nowAt: '21:00', 'ov-temp': 4,  'ov-precip': 5, 'ov-wind': 35, 'ov-alert': 'none' },
+  happy:         { _nowAt: '14:00', 'ov-feels': 19, 'ov-precip': 0, 'ov-wind': 10, 'ov-alert': 'none' },
+  content:       { _nowAt: '11:00', 'ov-feels': 12, 'ov-precip': 0, 'ov-wind': 30, 'ov-alert': 'none' },
+  uneasy:        { _nowAt: '15:00', 'ov-feels': 10, 'ov-precip': 1, 'ov-wind': 25, 'ov-alert': 'none' },
+  uncomfortable: { _nowAt: '18:00', 'ov-feels': 8,  'ov-precip': 2, 'ov-wind': 25, 'ov-alert': 'none' },
+  distressed:    { _nowAt: '21:00', 'ov-feels': 4,  'ov-precip': 5, 'ov-wind': 35, 'ov-alert': 'none' },
 };
 document.getElementById('fetch-weather').addEventListener('click', async (e) => {
   const btn = e.currentTarget;
@@ -1300,10 +1293,10 @@ document.getElementById('fetch-weather').addEventListener('click', async (e) => 
   btn.textContent = '⏳ fetching…';
   try {
     const data = await fetchWeather(ov.origin.lat, ov.origin.lng);
-    document.getElementById('ov-temp').value   = data.temp.toFixed(1);
+    document.getElementById('ov-feels').value  = data.feels.toFixed(1);
     document.getElementById('ov-precip').value = data.precip.toFixed(1);
     document.getElementById('ov-wind').value   = data.wind.toFixed(0);
-    btn.textContent = `✓ ${data.temp}°C · ${data.precip}mm · ${data.wind}km/h`;
+    btn.textContent = `✓ ${data.feels.toFixed(1)}°C · ${data.precip}mm · ${data.wind}km/h`;
   } catch (err) {
     btn.textContent = `✗ ${String(err.message).slice(0, 28)}`;
     console.error('Open-Meteo fetch failed:', err);
